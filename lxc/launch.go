@@ -80,6 +80,8 @@ func (c *launchCmd) run(config *lxd.Config, args []string) error {
 
 	if name == "" {
 		if resp.Resources == nil {
+			/* TODO - resource here coudl be an image, container or
+			 * snapshot.  what's a better word to use? */
 			return fmt.Errorf(gettext.Gettext("didn't get any affected resources from server"))
 		}
 
