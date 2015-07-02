@@ -218,7 +218,7 @@ func (m IdmapSet) ShiftFromNs(uid int, gid int) (int, int) {
 	return m.doShiftIntoNs(uid, gid, "out")
 }
 
-func getOwner(path string) (int, int, error) {
+func GetOwner(path string) (int, int, error) {
 	var stat syscall.Stat_t
 	err := syscall.Lstat(path, &stat)
 	if err != nil {
@@ -231,7 +231,7 @@ func getOwner(path string) (int, int, error) {
 
 func (set *IdmapSet) doUidshiftIntoContainer(dir string, testmode bool, how string) error {
 	convert := func(path string, fi os.FileInfo, err error) (e error) {
-		uid, gid, err := getOwner(path)
+		uid, gid, err := GetOwner(path)
 		if err != nil {
 			return err
 		}

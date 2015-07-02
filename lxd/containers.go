@@ -1,9 +1,12 @@
 package main
 
 import (
+	"archive/tar"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"sync"
 	"time"
@@ -371,4 +374,124 @@ func (d *lxdContainer) exportToDir(snap, dir string) error {
 		err = d.idmapset.UnshiftRootfs(rootfs)
 	}
 	return err
+}
+
+type deferredStruct struct {
+	files []string
+	dir   string
+};
+
+func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi os.FileInfo) error {
+	hdr := &tar.Header{}
+	if fi.IsDir() || fi.Mode() & os.ModeSymlink == os.ModeSymlink {
+		hdr.Size = 0
+	} else {
+		hdr.Size = fi.Size()
+	}
+
+	hdr.Name = path[offset:]
+
+	// unshift the id
+	var err error
+	hdr.Uid, hdr.Gid, err = shared.GetOwner(path)
+	if err != nil {
+		return fmt.Errorf("error getting owner: %s\n", err)
+	}
+	if !d.isPrivileged() {
+		hdr.Uid, hdr.Gid = d.idmapset.ShiftFromNs(hdr.Uid, hdr.Gid)
+	}
+
+	if err := tw.WriteHeader(hdr); err != nil {
+		return fmt.Errorf("error writing header: %s\n", err)
+	}
+	if fi.IsDir() {
+		return nil
+	}
+
+	if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
+		// todo - write out the readlink data
+		return nil
+	}
+
+	f, err := os.Open(path)
+	if _, err := io.Copy(tw, f); err != nil {
+		return fmt.Errorf("error copying file\n", err)
+	}
+	return nil
+}
+
+/*
+ * Export the container to a unshifted tarfile containing:
+ * dir/
+ *     metadata.yaml
+ *     rootfs/
+ */
+func (d *lxdContainer) exportToTar(snap string) (*tar.Reader, error) {
+	if snap != "" && d.c.Running() {
+		return nil, fmt.Errorf("Cannot export a running container as image")
+	}
+
+	pr, pw := io.Pipe()
+	tw := tar.NewWriter(pw)
+	tr := tar.NewReader(pr)
+
+	go func(d *lxdContainer, tw *tar.Writer) {
+		// maybe we should just do this with a filepath.Walk
+		files := []string{}
+		curdir := shared.VarPath("lxc", d.name)
+		fnam := filepath.Join(curdir, "metadata.yaml")
+		if shared.PathExists(fnam) {
+			files = append(files, fnam)
+		}
+		files = append(files, "rootfs")
+		deferred := []deferredStruct{}
+		var curfile string
+		offset := len(curdir)  // offset into name to use for the full tar path
+		for {
+			if len(files) == 0 {
+				l := len(deferred)
+				if l == 0 { // Done
+					tw.Close()
+					return
+				}
+				var prev deferredStruct
+				prev, deferred = deferred[l-1], deferred[:l-1]
+				curdir = prev.dir
+				files = prev.files
+			}
+			l := len(files)
+			if l < 1 {
+				tw.Close()
+				return
+			}
+			curfile, files = files[l-1], files[:l-1]
+			path := filepath.Join(curdir, curfile)
+			fi, err := os.Lstat(path)
+			if err != nil {
+				shared.Debugf("Error statting %s during exportToTar\n", path)
+				tw.Close()
+				return
+			}
+
+shared.Debugf("tarring up %s\n", path);
+			if err := d.tarStoreFile(offset, tw, path, fi); err != nil {
+				shared.Debugf("error tarring up %s: %s\n", path, err);
+				tw.Close()
+				return
+			}
+
+			if fi.IsDir() {
+				deferred = append(deferred, deferredStruct{files: files, dir: curdir})
+				curdir = path
+				files, err = shared.ReadDir(curdir)
+				if err != nil {
+					shared.Debugf("Error statting %s during exportToTar\n", path)
+					tw.Close()
+					return
+				}
+				continue
+			}
+		}
+	}(d, tw)
+	return tr, nil
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"archive/tar"
 	"bytes"
 	"crypto/sha256"
 	"encoding/json"
@@ -167,25 +168,59 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 		return info, err
 	}
 
-	if err := c.exportToDir(snap, builddir); err != nil {
-		return info, err
+	// tr = tar read exported by the container
+	tr, err := c.exportToTar(snap)
+	if err != nil {
+		return info, fmt.Errorf("imgPostContInfo: exportToTar failed: %s\n", err)
 	}
 
 	// Build the actual image file
 	tarfname := fmt.Sprintf("%s.tar.xz", name)
 	tarpath := filepath.Join(builddir, tarfname)
-	args := []string{"-C", builddir, "--numeric-owner", "-Jcf", tarpath}
-	if shared.PathExists(filepath.Join(builddir, "metadata.yaml")) {
-		args = append(args, "metadata.yaml")
-	}
-	args = append(args, "rootfs")
-	output, err := exec.Command("tar", args...).CombinedOutput()
+	tarfile, err := os.OpenFile(tarpath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0600)
 	if err != nil {
-		shared.Debugf("image packing failed\n")
-		shared.Debugf("command was: tar %q\n", args)
-		shared.Debugf(string(output))
 		return info, err
 	}
+	tw := tar.NewWriter(tarfile)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			shared.Debugf("XXX - reader got EOF\n")
+			// end of tar archive
+			break
+		}
+		if err != nil {
+			tarfile.Close()
+			tw.Close()
+			return info, err
+		}
+		fmt.Printf("Contents of %s size %d:\n", hdr.Name, int(hdr.Size))
+		if err := tw.WriteHeader(hdr); err != nil {
+			tarfile.Close()
+			tw.Close()
+			return info, err
+		}
+		fi := hdr.FileInfo()
+		if fi.IsDir() {
+			continue
+		} else if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
+			// todo - grab the readlink info
+			continue
+		}
+		if _, err := io.Copy(tw, tr); err != nil {
+			tarfile.Close()
+			tw.Close()
+			return info, err
+		}
+	}
+	if err := tw.Close(); err != nil {
+		tarfile.Close()
+		return info, err
+	}
+	tarfile.Close()
+
+	// TODO - we can probably write the tw.Write() straight into the
+	// sha256 and get the size+fingerprint without an additional read.
 
 	// get the size and fingerprint
 	sha256 := sha256.New()
