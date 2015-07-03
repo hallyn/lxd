@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 )
 
 /*
@@ -219,14 +218,8 @@ func (m IdmapSet) ShiftFromNs(uid int, gid int) (int, int) {
 }
 
 func GetOwner(path string) (int, int, error) {
-	var stat syscall.Stat_t
-	err := syscall.Lstat(path, &stat)
-	if err != nil {
-		return 0, 0, err
-	}
-	uid := int(stat.Uid)
-	gid := int(stat.Gid)
-	return uid, gid, nil
+	uid, gid, _, _, _, _, err := GetFileStat(path)
+	return uid, gid, err
 }
 
 func (set *IdmapSet) doUidshiftIntoContainer(dir string, testmode bool, how string) error {

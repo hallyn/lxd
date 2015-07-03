@@ -195,7 +195,6 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 			tw.Close()
 			return info, err
 		}
-		fmt.Printf("Contents of %s size %d:\n", hdr.Name, int(hdr.Size))
 		if err := tw.WriteHeader(hdr); err != nil {
 			tarfile.Close()
 			tw.Close()

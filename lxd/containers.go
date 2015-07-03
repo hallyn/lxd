@@ -383,8 +383,12 @@ type deferredStruct struct {
 };
 
 func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi os.FileInfo) error {
-	link := ""
 	var err error
+	//var major, minor, nlink int
+	var major, minor int
+	//var ino uint64
+
+	link := ""
 	if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
 		link, err = os.Readlink(path)
 		if err != nil {
@@ -404,12 +408,17 @@ func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi 
 	// todo - handle xattrs, nlinks, major:minor
 
 	// unshift the id under /rootfs/ for unpriv containers
-	hdr.Uid, hdr.Gid, err = shared.GetOwner(path)
+	//hdr.Uid, hdr.Gid, major, minor, ino, nlink, err = shared.GetFileStat(path)
+	hdr.Uid, hdr.Gid, major, minor, _, _, err = shared.GetFileStat(path)
 	if err != nil {
 		return fmt.Errorf("error getting owner: %s\n", err)
 	}
 	if !d.isPrivileged() && strings.HasPrefix(hdr.Name, "/rootfs") {
 		hdr.Uid, hdr.Gid = d.idmapset.ShiftFromNs(hdr.Uid, hdr.Gid)
+	}
+	if major != -1 {
+		hdr.Devmajor = int64(major)
+		hdr.Devminor = int64(minor)
 	}
 
 	if err := tw.WriteHeader(hdr); err != nil {
