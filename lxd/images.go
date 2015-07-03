@@ -182,7 +182,8 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 	if err != nil {
 		return info, err
 	}
-	gw := gzip.NewWriter(tarfile)
+	sha256 := sha256.New()
+	gw := gzip.NewWriter(io.MultiWriter(tarfile, sha256))
 	tw := tar.NewWriter(gw)
 	for {
 		hdr, err := tr.Next()
@@ -219,20 +220,6 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 	}
 	tarfile.Close()
 
-	// TODO - we can probably write the tw.Write() straight into the
-	// sha256 and get the size+fingerprint without an additional read.
-
-	// get the size and fingerprint
-	sha256 := sha256.New()
-	tarf, err := os.Open(tarpath)
-	if err != nil {
-		return info, err
-	}
-	info.Size, err = io.Copy(sha256, tarf)
-	tarf.Close()
-	if err != nil {
-		return info, err
-	}
 	info.Fingerprint = fmt.Sprintf("%x", sha256.Sum(nil))
 
 	/* rename the the file to the expected name so our caller can use it */
