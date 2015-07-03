@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -382,40 +383,48 @@ type deferredStruct struct {
 };
 
 func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi os.FileInfo) error {
-	hdr := &tar.Header{}
+	link := ""
+	var err error
+	if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
+		link, err = os.Readlink(path)
+		if err != nil {
+			return err
+		}
+	}
+	hdr, err := tar.FileInfoHeader(fi, link)
+	if err != nil {
+		return err
+	}
+	hdr.Name = path[offset:]
+	hdr.Size = fi.Size()
 	if fi.IsDir() || fi.Mode() & os.ModeSymlink == os.ModeSymlink {
 		hdr.Size = 0
-	} else {
-		hdr.Size = fi.Size()
 	}
 
-	hdr.Name = path[offset:]
+	// todo - handle xattrs, nlinks, major:minor
 
-	// unshift the id
-	var err error
+	// unshift the id under /rootfs/ for unpriv containers
 	hdr.Uid, hdr.Gid, err = shared.GetOwner(path)
 	if err != nil {
 		return fmt.Errorf("error getting owner: %s\n", err)
 	}
-	if !d.isPrivileged() {
+	if !d.isPrivileged() && strings.HasPrefix(hdr.Name, "/rootfs/") {
 		hdr.Uid, hdr.Gid = d.idmapset.ShiftFromNs(hdr.Uid, hdr.Gid)
 	}
 
 	if err := tw.WriteHeader(hdr); err != nil {
 		return fmt.Errorf("error writing header: %s\n", err)
 	}
-	if fi.IsDir() {
-		return nil
-	}
 
-	if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
-		// todo - write out the readlink data
-		return nil
-	}
-
-	f, err := os.Open(path)
-	if _, err := io.Copy(tw, f); err != nil {
-		return fmt.Errorf("error copying file\n", err)
+	if hdr.Typeflag == tar.TypeReg {
+		f, err := os.Open(path)
+		if err != nil {
+			return fmt.Errorf("tarStoreFile: error opening file: %s\n", err)
+		}
+		defer f.Close()
+		if _, err := io.Copy(tw, f); err != nil {
+			return fmt.Errorf("error copying file\n", err)
+		}
 	}
 	return nil
 }
@@ -436,61 +445,35 @@ func (d *lxdContainer) exportToTar(snap string) (*tar.Reader, error) {
 	tr := tar.NewReader(pr)
 
 	go func(d *lxdContainer, tw *tar.Writer) {
-		// maybe we should just do this with a filepath.Walk
-		files := []string{}
-		curdir := shared.VarPath("lxc", d.name)
-		fnam := filepath.Join(curdir, "metadata.yaml")
-		if shared.PathExists(fnam) {
-			files = append(files, fnam)
-		}
-		files = append(files, "rootfs")
-		deferred := []deferredStruct{}
-		var curfile string
-		offset := len(curdir)  // offset into name to use for the full tar path
-		for {
-			if len(files) == 0 {
-				l := len(deferred)
-				if l == 0 { // Done
-					tw.Close()
-					return
-				}
-				var prev deferredStruct
-				prev, deferred = deferred[l-1], deferred[:l-1]
-				curdir = prev.dir
-				files = prev.files
-			}
-			l := len(files)
-			if l < 1 {
-				tw.Close()
-				return
-			}
-			curfile, files = files[l-1], files[:l-1]
-			path := filepath.Join(curdir, curfile)
-			fi, err := os.Lstat(path)
-			if err != nil {
-				shared.Debugf("Error statting %s during exportToTar\n", path)
-				tw.Close()
-				return
-			}
-
-shared.Debugf("tarring up %s\n", path);
+		defer tw.Close()
+		cDir := shared.VarPath("lxc", d.name)
+		offset := len(cDir)
+		fnam := filepath.Join(cDir, "metadata.yaml")
+		writeToTar := func(path string, fi os.FileInfo, err error) error {
 			if err := d.tarStoreFile(offset, tw, path, fi); err != nil {
 				shared.Debugf("error tarring up %s: %s\n", path, err);
-				tw.Close()
+				return err
+			}
+			return nil
+		}
+
+		fnam = filepath.Join(cDir, "metadata.yaml")
+		if shared.PathExists(fnam) {
+			fi, err := os.Lstat(fnam)
+			if err != nil {
+				shared.Debugf("Error statting %s during exportToTar\n", fnam)
 				return
 			}
-
-			if fi.IsDir() {
-				deferred = append(deferred, deferredStruct{files: files, dir: curdir})
-				curdir = path
-				files, err = shared.ReadDir(curdir)
-				if err != nil {
-					shared.Debugf("Error statting %s during exportToTar\n", path)
-					tw.Close()
-					return
-				}
-				continue
+			if err := d.tarStoreFile(offset, tw, fnam, fi); err != nil {
+				shared.Debugf("exportToTar: error writing to tarfile: %s\n", err)
+				return
 			}
+		}
+		fnam = filepath.Join(cDir, "rootfs")
+		filepath.Walk(fnam, writeToTar)
+		fnam = filepath.Join(cDir, "templates")
+		if shared.PathExists(fnam) {
+			filepath.Walk(fnam, writeToTar)
 		}
 	}(d, tw)
 	return tr, nil
