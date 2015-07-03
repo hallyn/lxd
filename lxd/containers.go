@@ -382,11 +382,10 @@ type deferredStruct struct {
 	dir   string
 };
 
-func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi os.FileInfo) error {
+func (d *lxdContainer) tarStoreFile(linkmap map[uint64]string, offset int, tw *tar.Writer, path string, fi os.FileInfo) error {
 	var err error
-	//var major, minor, nlink int
-	var major, minor int
-	//var ino uint64
+	var major, minor, nlink int
+	var ino uint64
 
 	link := ""
 	if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
@@ -405,11 +404,9 @@ func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi 
 		hdr.Size = 0
 	}
 
-	// todo - handle xattrs, nlinks, major:minor
 
 	// unshift the id under /rootfs/ for unpriv containers
-	//hdr.Uid, hdr.Gid, major, minor, ino, nlink, err = shared.GetFileStat(path)
-	hdr.Uid, hdr.Gid, major, minor, _, _, err = shared.GetFileStat(path)
+	hdr.Uid, hdr.Gid, major, minor, ino, nlink, err = shared.GetFileStat(path)
 	if err != nil {
 		return fmt.Errorf("error getting owner: %s\n", err)
 	}
@@ -420,6 +417,19 @@ func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi 
 		hdr.Devmajor = int64(major)
 		hdr.Devminor = int64(minor)
 	}
+
+	// If it's a hardlink we've already seen use the old name
+	if fi.Mode().IsRegular() && nlink > 1 {
+		if firstpath, found := linkmap[ino]; found {
+			hdr.Typeflag = tar.TypeLink
+			hdr.Linkname = firstpath
+			hdr.Size = 0
+		} else {
+			linkmap[ino] = hdr.Name
+		}
+	}
+
+	// todo - handle xattrs
 
 	if err := tw.WriteHeader(hdr); err != nil {
 		return fmt.Errorf("error writing header: %s\n", err)
@@ -455,11 +465,17 @@ func (d *lxdContainer) exportToTar(snap string) (*tar.Reader, error) {
 
 	go func(d *lxdContainer, tw *tar.Writer) {
 		defer tw.Close()
+		// keep track of the first path we saw for each path with nlink>1
+		linkmap := map[uint64]string{}
+
 		cDir := shared.VarPath("lxc", d.name)
+
+		// Path inside the tar image is the pathname starting after cDir
 		offset := len(cDir)
+
 		fnam := filepath.Join(cDir, "metadata.yaml")
 		writeToTar := func(path string, fi os.FileInfo, err error) error {
-			if err := d.tarStoreFile(offset, tw, path, fi); err != nil {
+			if err := d.tarStoreFile(linkmap, offset, tw, path, fi); err != nil {
 				shared.Debugf("error tarring up %s: %s\n", path, err);
 				return err
 			}
@@ -473,7 +489,7 @@ func (d *lxdContainer) exportToTar(snap string) (*tar.Reader, error) {
 				shared.Debugf("Error statting %s during exportToTar\n", fnam)
 				return
 			}
-			if err := d.tarStoreFile(offset, tw, fnam, fi); err != nil {
+			if err := d.tarStoreFile(linkmap, offset, tw, fnam, fi); err != nil {
 				shared.Debugf("exportToTar: error writing to tarfile: %s\n", err)
 				return
 			}
