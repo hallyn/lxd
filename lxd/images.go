@@ -1,7 +1,6 @@
 package main
 
 import (
-	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"crypto/sha256"
@@ -169,12 +168,6 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 		return info, err
 	}
 
-	// tr = tar read exported by the container
-	tr, err := c.exportToTar(snap)
-	if err != nil {
-		return info, fmt.Errorf("imgPostContInfo: exportToTar failed: %s\n", err)
-	}
-
 	// Build the actual image file
 	tarfname := fmt.Sprintf("%s.tar.xz", name)
 	tarpath := filepath.Join(builddir, tarfname)
@@ -184,39 +177,9 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 	}
 	sha256 := sha256.New()
 	gw := gzip.NewWriter(io.MultiWriter(tarfile, sha256))
-	tw := tar.NewWriter(gw)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			// end of tar archive
-			break
-		}
-		if err != nil {
-			tarfile.Close()
-			tw.Close()
-			return info, err
-		}
-		if err := tw.WriteHeader(hdr); err != nil {
-			tarfile.Close()
-			tw.Close()
-			return info, err
-		}
-		fi := hdr.FileInfo()
-		if fi.IsDir() {
-			continue
-		} else if fi.Mode() & os.ModeSymlink == os.ModeSymlink {
-			// todo - grab the readlink info
-			continue
-		}
-		if _, err := io.Copy(tw, tr); err != nil {
-			tarfile.Close()
-			tw.Close()
-			return info, err
-		}
-	}
-	if err := tw.Close(); err != nil {
+	if err := c.exportToTar(snap, gw); err != nil {
 		tarfile.Close()
-		return info, err
+		return info, fmt.Errorf("imgPostContInfo: exportToTar failed: %s\n", err)
 	}
 	tarfile.Close()
 

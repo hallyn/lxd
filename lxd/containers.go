@@ -338,50 +338,6 @@ func startContainer(args []string) error {
 	return c.Start()
 }
 
-/*
- * Export the container under @dir.  It will look like:
- * dir/
- *     metadata.yaml
- *     rootfs/
- */
-func (d *lxdContainer) exportToDir(snap, dir string) error {
-	if snap != "" && d.c.Running() {
-		return fmt.Errorf("Cannot export a running container as image")
-	}
-
-	source := shared.VarPath("lxc", d.name, "metadata.yaml")
-	dest := fmt.Sprintf("%s/metadata.yaml", dir)
-	if shared.PathExists(source) {
-		if err := shared.CopyFile(dest, source); err != nil {
-			return err
-		}
-	}
-
-	if snap != "" {
-		source = snapshotRootfsDir(d, snap)
-	} else {
-		source = shared.VarPath("lxc", d.name, "rootfs")
-	}
-
-	// rsync the rootfs
-	err := exec.Command("rsync", "-a", "--devices", source, dir).Run()
-	if err != nil {
-		return err
-	}
-
-	// unshift
-	if !d.isPrivileged() {
-		rootfs := fmt.Sprintf("%s/rootfs", dir)
-		err = d.idmapset.UnshiftRootfs(rootfs)
-	}
-	return err
-}
-
-type deferredStruct struct {
-	files []string
-	dir   string
-};
-
 func (d *lxdContainer) tarStoreFile(linkmap map[uint64]string, offset int, tw *tar.Writer, path string, fi os.FileInfo) error {
 	var err error
 	var major, minor, nlink int
@@ -399,17 +355,18 @@ func (d *lxdContainer) tarStoreFile(linkmap map[uint64]string, offset int, tw *t
 		return err
 	}
 	hdr.Name = path[offset:]
-	hdr.Size = fi.Size()
 	if fi.IsDir() || fi.Mode() & os.ModeSymlink == os.ModeSymlink {
 		hdr.Size = 0
+	} else {
+		hdr.Size = fi.Size()
 	}
 
-
-	// unshift the id under /rootfs/ for unpriv containers
 	hdr.Uid, hdr.Gid, major, minor, ino, nlink, err = shared.GetFileStat(path)
 	if err != nil {
-		return fmt.Errorf("error getting owner: %s\n", err)
+		return fmt.Errorf("error getting file info: %s\n", err)
 	}
+
+	// unshift the id under /rootfs/ for unpriv containers
 	if !d.isPrivileged() && strings.HasPrefix(hdr.Name, "/rootfs") {
 		hdr.Uid, hdr.Gid = d.idmapset.ShiftFromNs(hdr.Uid, hdr.Gid)
 	}
@@ -454,52 +411,49 @@ func (d *lxdContainer) tarStoreFile(linkmap map[uint64]string, offset int, tw *t
  *     metadata.yaml
  *     rootfs/
  */
-func (d *lxdContainer) exportToTar(snap string) (*tar.Reader, error) {
+func (d *lxdContainer) exportToTar(snap string, w io.Writer) error {
 	if snap != "" && d.c.Running() {
-		return nil, fmt.Errorf("Cannot export a running container as image")
+		return fmt.Errorf("Cannot export a running container as image")
 	}
 
-	pr, pw := io.Pipe()
-	tw := tar.NewWriter(pw)
-	tr := tar.NewReader(pr)
+	tw := tar.NewWriter(w)
 
-	go func(d *lxdContainer, tw *tar.Writer) {
-		defer tw.Close()
-		// keep track of the first path we saw for each path with nlink>1
-		linkmap := map[uint64]string{}
+	// keep track of the first path we saw for each path with nlink>1
+	linkmap := map[uint64]string{}
 
-		cDir := shared.VarPath("lxc", d.name)
+	cDir := shared.VarPath("lxc", d.name)
 
-		// Path inside the tar image is the pathname starting after cDir
-		offset := len(cDir)
+	// Path inside the tar image is the pathname starting after cDir
+	offset := len(cDir)
 
-		fnam := filepath.Join(cDir, "metadata.yaml")
-		writeToTar := func(path string, fi os.FileInfo, err error) error {
-			if err := d.tarStoreFile(linkmap, offset, tw, path, fi); err != nil {
-				shared.Debugf("error tarring up %s: %s\n", path, err);
-				return err
-			}
-			return nil
+	fnam := filepath.Join(cDir, "metadata.yaml")
+	writeToTar := func(path string, fi os.FileInfo, err error) error {
+		if err := d.tarStoreFile(linkmap, offset, tw, path, fi); err != nil {
+			shared.Debugf("error tarring up %s: %s\n", path, err);
+			return err
 		}
+		return nil
+	}
 
-		fnam = filepath.Join(cDir, "metadata.yaml")
-		if shared.PathExists(fnam) {
-			fi, err := os.Lstat(fnam)
-			if err != nil {
-				shared.Debugf("Error statting %s during exportToTar\n", fnam)
-				return
-			}
-			if err := d.tarStoreFile(linkmap, offset, tw, fnam, fi); err != nil {
-				shared.Debugf("exportToTar: error writing to tarfile: %s\n", err)
-				return
-			}
+	fnam = filepath.Join(cDir, "metadata.yaml")
+	if shared.PathExists(fnam) {
+		fi, err := os.Lstat(fnam)
+		if err != nil {
+			shared.Debugf("Error statting %s during exportToTar\n", fnam)
+			tw.Close()
+			return err
 		}
-		fnam = filepath.Join(cDir, "rootfs")
+		if err := d.tarStoreFile(linkmap, offset, tw, fnam, fi); err != nil {
+			shared.Debugf("exportToTar: error writing to tarfile: %s\n", err)
+			tw.Close()
+			return err
+		}
+	}
+	fnam = filepath.Join(cDir, "rootfs")
+	filepath.Walk(fnam, writeToTar)
+	fnam = filepath.Join(cDir, "templates")
+	if shared.PathExists(fnam) {
 		filepath.Walk(fnam, writeToTar)
-		fnam = filepath.Join(cDir, "templates")
-		if shared.PathExists(fnam) {
-			filepath.Walk(fnam, writeToTar)
-		}
-	}(d, tw)
-	return tr, nil
+	}
+	return tw.Close()
 }
