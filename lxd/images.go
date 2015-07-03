@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
@@ -181,11 +182,11 @@ func imgPostContInfo(d *Daemon, r *http.Request, req imageFromContainerPostReq,
 	if err != nil {
 		return info, err
 	}
-	tw := tar.NewWriter(tarfile)
+	gw := gzip.NewWriter(tarfile)
+	tw := tar.NewWriter(gw)
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {
-			shared.Debugf("XXX - reader got EOF\n")
 			// end of tar archive
 			break
 		}

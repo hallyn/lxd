@@ -408,7 +408,7 @@ func (d *lxdContainer) tarStoreFile(offset int, tw *tar.Writer, path string, fi 
 	if err != nil {
 		return fmt.Errorf("error getting owner: %s\n", err)
 	}
-	if !d.isPrivileged() && strings.HasPrefix(hdr.Name, "/rootfs/") {
+	if !d.isPrivileged() && strings.HasPrefix(hdr.Name, "/rootfs") {
 		hdr.Uid, hdr.Gid = d.idmapset.ShiftFromNs(hdr.Uid, hdr.Gid)
 	}
 
