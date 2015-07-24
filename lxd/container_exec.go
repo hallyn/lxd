@@ -152,7 +152,7 @@ func (s *execWs) Do() shared.OperationResult {
 
 					err = shared.SetSize(int(ptys[0].Fd()), winchWidth, winchHeight)
 					if err != nil {
-						shared.Debugf("Failed to set window size to: %dx%d", winchWidth, winchHeight)
+						shared.Debugf("Failed to set window size to: %dx%d: %s", winchWidth, winchHeight, err)
 					}
 				}
 
