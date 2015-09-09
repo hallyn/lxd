@@ -508,9 +508,6 @@ func (d *Daemon) Init() error {
 			log.Ctx{"path": shared.VarPath("")})
 	}
 
-	/* Can we create devices? */
-	checkCanMknod()
-
 	/* Get the list of supported architectures */
 	var architectures = []int{}
 
