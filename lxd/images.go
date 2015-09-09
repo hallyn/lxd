@@ -92,13 +92,13 @@ func detectCompression(fname string) ([]string, string, error) {
 
 }
 
-var canMknod = false
+var canMknod = true
 func checkCanMknod() {
 	/* TODO - mktemp */
 	fnam := shared.VarPath("null")
 	// warning to cut-pasters: can't do the below in general, that is if minor is big
 	if err := syscall.Mknod(fnam, syscall.S_IFCHR, int( (int64(1)<<8) | int64(3))); err != nil {
-		canMknod = true
+		canMknod = false
 		os.Remove(fnam)
 	}
 }
