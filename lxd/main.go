@@ -106,6 +106,7 @@ func run() error {
 		case "activateifneeded":
 			return activateIfNeeded()
 		case "seccompmknod":
+			*debug = true
 			if len(os.Args) < 4 || os.Args[2] != "--" {
 				return fmt.Errorf("Bad arguments to seccompmknod")
 			}
