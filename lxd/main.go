@@ -105,6 +105,8 @@ func run() error {
 			return cleanShutdown()
 		case "activateifneeded":
 			return activateIfNeeded()
+		case "seccompmknod":
+			return seccompMknod(os.Args[2:])
 		}
 	}
 
