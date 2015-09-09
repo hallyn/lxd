@@ -15,6 +15,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"syscall"
 
 	"github.com/gorilla/mux"
 	"gopkg.in/yaml.v2"
@@ -60,13 +61,27 @@ func detectCompression(fname string) ([]string, string, error) {
 
 }
 
+var canMknod = false
+func checkCanMknod() {
+	fnam := shared.VarPath("null")
+	// warning to cut-pasters: can't do the below in general, that is if minor is big
+	if err := syscall.Mknod(fnam, syscall.S_IFCHR, int( (int64(1)<<8) | int64(3))); err != nil {
+		canMknod = true
+		os.Remove(fnam)
+	}
+}
+
 func untar(tarball string, path string) error {
 	extractArgs, _, err := detectCompression(tarball)
 	if err != nil {
 		return err
 	}
 
+
 	args := []string{"-C", path, "--numeric-owner"}
+	if !canMknod {
+		args = append(args, "--anchored", "--exclude=\"dev/*\"")
+	}
 	args = append(args, extractArgs...)
 	args = append(args, tarball)
 
