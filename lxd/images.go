@@ -21,44 +21,9 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/lxc/lxd/shared"
-	"github.com/seccomp/libseccomp-golang"
 
 	log "gopkg.in/inconshreveable/log15.v2"
 )
-
-/* called from lxd/main.go on "lxd seccompmknod tar ..." */
-func seccompMknod(args []string) error {
-	filter, err := seccomp.NewFilter(seccomp.ActAllow)
-	if err != nil {
-		return err
-	}
-	syscalls := []string{"mknod", "mknodat"}
-	for _, syscall := range syscalls {
-		call, err := seccomp.GetSyscallFromName(syscall)
-		if err != nil {
-			return err
-		}
-		err = filter.AddRule(call, seccomp.ActErrno.SetReturnCode(0x0))
-		if err != nil {
-			return err
-		}
-	}
-	err = filter.Load()
-	if err != nil {
-		return err
-	}
-
-	command := args[0]
-	output, err := exec.Command(command, args[1:]...).CombinedOutput()
-	if err != nil {
-		shared.Debugf("Unpacking failed")
-		shared.Debugf(string(output))
-		shared.Debugf("Error: %s\n", err)
-		return err
-	}
-
-	return err
-}
 
 func detectCompression(fname string) ([]string, string, error) {
 	f, err := os.Open(fname)
@@ -121,12 +86,10 @@ func untar(tarball string, path string) error {
 		// then run with a seccomp filter which turns mknod into a
 		// a noop.  The container config had better know how to bind
 		// mount the devices in at container start.
-		args = append(args, "seccompmknod", "--", "tar", "-C", path, "--numeric-owner")
-		command = "lxd"
-	} else {
-		args = append(args, "-C", path, "--numeric-owner")
+		args = append(args, "--exclude=dev/*")
 	}
-	args = append(args, extractArgs...)
+	args = append(args, "-C", path, "--numeric-owner")
+	args = append(args,  extractArgs...)
 	args = append(args, tarball)
 
 	output, err := exec.Command(command, args...).CombinedOutput()
