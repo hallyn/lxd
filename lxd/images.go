@@ -32,13 +32,16 @@ func seccompMknod(args []string) error {
 	if err != nil {
 		return err
 	}
-	call, err := seccomp.GetSyscallFromName("mknod")
-	if err != nil {
-		return err
-	}
-	err = filter.AddRule(call, seccomp.ActErrno.SetReturnCode(0x0))
-	if err != nil {
-		return err
+	syscalls := []string{"mknod", "mknodat"}
+	for _, syscall := range syscalls {
+		call, err := seccomp.GetSyscallFromName(syscall)
+		if err != nil {
+			return err
+		}
+		err = filter.AddRule(call, seccomp.ActErrno.SetReturnCode(0x0))
+		if err != nil {
+			return err
+		}
 	}
 	err = filter.Load()
 	if err != nil {
@@ -50,6 +53,7 @@ func seccompMknod(args []string) error {
 	if err != nil {
 		shared.Debugf("Unpacking failed")
 		shared.Debugf(string(output))
+		shared.Debugf("Error: %s\n", err)
 		return err
 	}
 
