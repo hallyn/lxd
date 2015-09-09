@@ -117,7 +117,7 @@ func untar(tarball string, path string) error {
 		// then run with a seccomp filter which turns mknod into a
 		// a noop.  The container config had better know how to bind
 		// mount the devices in at container start.
-		args = append(args, "seccompmknod", "tar", "-C", path, "--numeric-owner")
+		args = append(args, "seccompmknod", "--", "tar", "-C", path, "--numeric-owner")
 		command = "lxd"
 	} else {
 		args = append(args, "-C", path, "--numeric-owner")

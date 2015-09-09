@@ -106,7 +106,10 @@ func run() error {
 		case "activateifneeded":
 			return activateIfNeeded()
 		case "seccompmknod":
-			return seccompMknod(os.Args[2:])
+			if len(os.Args) < 4 || os.Args[2] != "==" {
+				return errArgs
+			}
+			return seccompMknod(os.Args[3:])
 		}
 	}
 
