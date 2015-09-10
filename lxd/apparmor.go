@@ -22,12 +22,23 @@ var aaEnabled = false
 
 var aaPath = shared.VarPath("security", "apparmor")
 
+const NESTING_AA_PROFILE = `
+  mount /var/lib/lxd/shmounts/ -> /var/lib/lxd/shmounts/,
+  mount none -> /var/lib/lxd/shmounts/,
+  mount options=bind,
+  mount options=(rw,make-rshared),
+  mount options=bind /var/lib/lxd/shmounts/** -> /var/lib/lxd/**,
+`
+
 const DEFAULT_AA_PROFILE = `
 #include <tunables/global>
 profile lxd-%s flags=(attach_disconnected,mediate_deleted) {
     #include <abstractions/lxc/container-base>
 
     # user input raw.apparmor below here
+    %s
+
+    # nesting support goes here if needed
     %s
 }`
 
@@ -44,7 +55,12 @@ func getAAProfileContent(c *containerLXD) string {
 		rawApparmor = ""
 	}
 
-	return fmt.Sprintf(DEFAULT_AA_PROFILE, c.name, rawApparmor)
+	nesting := ""
+	if c.IsNesting() {
+		nesting = NESTING_AA_PROFILE
+	}
+
+	return fmt.Sprintf(DEFAULT_AA_PROFILE, c.name, rawApparmor, nesting)
 }
 
 func runApparmor(command string, profile string) error {

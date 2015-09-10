@@ -473,6 +473,21 @@ func (c *containerLXD) init() error {
 		}
 	}
 
+	if c.IsNesting() {
+		orig := c.c.ConfigItem("lxc.mount.auto")
+		auto := ""
+		if len(orig) == 1 {
+			auto = orig[0]
+		}
+		if ! strings.Contains(auto, "cgroup") {
+			auto = fmt.Sprintf("%s %s", auto, "cgroup:mixed")
+			err = c.c.SetConfigItem("lxc.mount.auto", auto)
+			if err != nil {
+				return err
+			}
+		}
+	}
+
 	if err := c.c.SetConfigItem("lxc.rootfs", c.RootfsPathGet()); err != nil {
 		return err
 	}
@@ -695,6 +710,16 @@ func (c *containerLXD) Reboot() error {
 
 func (c *containerLXD) Freeze() error {
 	return c.c.Freeze()
+}
+
+func (c *containerLXD) IsNesting() bool {
+	switch strings.ToLower(c.config["security.nesting"]) {
+	case "1":
+		return true
+	case "true":
+		return true
+	}
+	return false
 }
 
 func (c *containerLXD) IsPrivileged() bool {
