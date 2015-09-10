@@ -501,18 +501,6 @@ func (c *containerLXD) init() error {
 		}
 	}
 
-	/*
-	 * Until stacked apparmor profiles are possible, we have to run nested
-	 * containers unconfined
-	 */
-	if curProfile := aaProfile(); curProfile != "" {
-		shared.Debugf("Running %s in current profile %s (nested container)", c.name, curProfile)
-		curProfile := strings.TrimSuffix(curProfile, " (enforce)")
-		if err := c.c.SetConfigItem("lxc.aa_profile", curProfile); err != nil {
-			return err
-		}
-	}
-
 	if err := c.c.SetConfigItem("lxc.rootfs", c.RootfsPathGet()); err != nil {
 		return err
 	}
@@ -529,7 +517,17 @@ func (c *containerLXD) init() error {
 		return err
 	}
 
-	if err := c.c.SetConfigItem("lxc.aa_profile", AAProfileName(c)); err != nil {
+	/*
+	 * Until stacked apparmor profiles are possible, we have to run nested
+	 * containers unconfined
+	 */
+	if curProfile := aaProfile(); strings.HasPrefix(curProfile, "lxd-") {
+		shared.Debugf("Running %s in current profile %s (nested container)", c.name, curProfile)
+		curProfile := strings.TrimSuffix(curProfile, " (enforce)")
+		if err := c.c.SetConfigItem("lxc.aa_profile", curProfile); err != nil {
+			return err
+		}
+	} else if err := c.c.SetConfigItem("lxc.aa_profile", AAProfileName(c)); err != nil {
 		return err
 	}
 
