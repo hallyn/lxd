@@ -486,6 +486,18 @@ func (c *containerLXD) init() error {
 				return err
 			}
 		}
+		/*
+		 * mount extra /proc and /sys to work around kernel
+		 * restrictions on remounting them when covered
+		 */
+		err = c.c.SetConfigItem("lxc.mount.entry", "proc dev/.lxc/proc proc create=dir,optional")
+		if err != nil {
+			return err
+		}
+		err = c.c.SetConfigItem("lxc.mount.entry", "sys dev/.lxc/sys sysfs create=dir,optional")
+		if err != nil {
+			return err
+		}
 	}
 
 	if err := c.c.SetConfigItem("lxc.rootfs", c.RootfsPathGet()); err != nil {
