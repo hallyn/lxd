@@ -23,8 +23,8 @@ var aaEnabled = false
 var aaPath = shared.VarPath("security", "apparmor")
 
 const NESTING_AA_PROFILE = `
-  #include <abstractions/lxc/start-container>
-
+  pivot_root,
+  change_profile -> lxd-*,
   mount /var/lib/lxd/shmounts/ -> /var/lib/lxd/shmounts/,
   mount none -> /var/lib/lxd/shmounts/,
   mount fstype=proc -> /usr/lib/x86_64-linux-gnu/lxc/**,

@@ -498,11 +498,21 @@ func (c *containerLXD) init() error {
 		if err != nil {
 			return err
 		}
+	}
+
+	if c.IsNested() {
 		/*
-		 * Until stacked apparmor profiles are possible, we have to run nested
-		 * containers unconfined
+		 * Until stacked apparmor profiles are possible, we can't do
+		 * apparmor in a nested container.  So mask it.
 		 */
-		err = c.c.SetConfigItem("lxc.aa_profile", "unconfined")
+		maskpath := path.Join(c.PathGet(""), "aamask")
+		if err := shared.CreateContentsIfNeeded(maskpath, "N"); err != nil {
+			return err
+		}
+		mntentry := fmt.Sprintf("%s sys/module/apparmor/parameters/enabled none bind,optional")
+		if err := c.c.SetConfigItem("lxc.mount.entry", mntentry); err != nil {
+			return err
+		}
 	}
 
 	if err := c.c.SetConfigItem("lxc.rootfs", c.RootfsPathGet()); err != nil {
@@ -729,11 +739,25 @@ func (c *containerLXD) Freeze() error {
 	return c.c.Freeze()
 }
 
+/* Is this container intended for running containers inside of it?  */
 func (c *containerLXD) IsNesting() bool {
 	switch strings.ToLower(c.config["security.nesting"]) {
 	case "1":
 		return true
 	case "true":
+		return true
+	}
+	return false
+}
+
+/* Are we running inside a lxc or lxd container?  */
+func (c *containerLXD) IsNested() bool {
+	contents, err := ioutil.ReadFile("/proc/self/attr/current")
+	if err != nil {
+		return false
+	}
+	s := string(contents)
+	if strings.HasPrefix(s, "lxc-") || strings.HasPrefix(s, "lxd-") {
 		return true
 	}
 	return false

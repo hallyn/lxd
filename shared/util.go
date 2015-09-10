@@ -544,3 +544,10 @@ func DeepCopy(src, dest interface{}) error {
 
 	return nil
 }
+
+func CreateContentsIfNeeded(path string, contents string) error {
+	if PathExists(path) {
+		return nil
+	}
+	return ioutil.WriteFile(path, []byte(contents), 0755)
+}
