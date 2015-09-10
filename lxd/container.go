@@ -498,6 +498,11 @@ func (c *containerLXD) init() error {
 		if err != nil {
 			return err
 		}
+		/*
+		 * Until stacked apparmor profiles are possible, we have to run nested
+		 * containers unconfined
+		 */
+		err = c.c.SetConfigItem("lxc.aa_profile", "unconfined")
 	}
 
 	if err := c.c.SetConfigItem("lxc.rootfs", c.RootfsPathGet()); err != nil {
