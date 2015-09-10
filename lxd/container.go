@@ -521,9 +521,10 @@ func (c *containerLXD) init() error {
 	 * Until stacked apparmor profiles are possible, we have to run nested
 	 * containers unconfined
 	 */
-	if curProfile := aaProfile(); strings.HasPrefix(curProfile, "lxd-") {
+	if aaConfined() {
+		curProfile := aaProfile()
 		shared.Debugf("Running %s in current profile %s (nested container)", c.name, curProfile)
-		curProfile := strings.TrimSuffix(curProfile, " (enforce)")
+		curProfile = strings.TrimSuffix(curProfile, " (enforce)")
 		if err := c.c.SetConfigItem("lxc.aa_profile", curProfile); err != nil {
 			return err
 		}

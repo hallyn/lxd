@@ -99,16 +99,21 @@ func runApparmor(command string, profile string) error {
 	return err
 }
 
+/*
+ * lxd could be confined by some other profile, but we'll only support
+ * running under lxc-container-default-with-nesting or lxd-*
+ */
 func aaConfined() bool {
-	b, err := ioutil.ReadFile("/proc/self/attr/current")
-	if err != nil {
-		return false
+	curProfile := aaProfile()
+
+	switch {
+	case strings.HasPrefix(curProfile, "lxc-container-default-with-nesting"):
+		return true
+	case strings.HasPrefix(curProfile, "lxd-"):
+		return true
 	}
-	s := string(b)
-	if s == "unconfined\n" || s == "usr.bin.lxc-start\n" {
-		return false
-	}
-	return true
+
+	return false
 }
 
 // Ensure that the container's policy is loaded into the kernel so the
