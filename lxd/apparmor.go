@@ -64,6 +64,11 @@ func getAAProfileContent(c *containerLXD) string {
 }
 
 func runApparmor(command string, profile string) error {
+	if aaConfined() {
+		shared.Log.Debug("Already apparmor-confined (nested?), skipping aa profile actions")
+		return nil
+	}
+
 	cmd := exec.Command("apparmor_parser", []string{
 		fmt.Sprintf("-%sWL", command),
 		path.Join(aaPath, "cache"),
@@ -97,11 +102,6 @@ func AALoadProfile(c *containerLXD) error {
 
 	if !aaEnabled {
 		shared.Log.Debug("Apparmor not enabled, skipping profile load")
-		return nil
-	}
-
-	if aaConfined() {
-		shared.Log.Debug("Already apparmor-confined (nested?), skipping profile load")
 		return nil
 	}
 
