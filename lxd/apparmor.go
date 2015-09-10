@@ -63,12 +63,29 @@ func runApparmor(command string, profile string) error {
 	return err
 }
 
+func aaConfined() bool {
+	b, err := ioutil.ReadFile("/proc/self/attr/current")
+	if err != nil {
+		return false
+	}
+	s := string(b)
+	if s == "unconfined\n" || s == "usr.bin.lxc-start\n" {
+		return false
+	}
+	return true
+}
+
 // Ensure that the container's policy is loaded into the kernel so the
 // container can boot.
 func AALoadProfile(c *containerLXD) error {
 
 	if !aaEnabled {
 		shared.Log.Debug("Apparmor not enabled, skipping profile load")
+		return nil
+	}
+
+	if aaConfined() {
+		shared.Log.Debug("Already apparmor-confined (nested?), skipping profile load")
 		return nil
 	}
 
