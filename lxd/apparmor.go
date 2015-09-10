@@ -23,8 +23,7 @@ var aaEnabled = false
 var aaPath = shared.VarPath("security", "apparmor")
 
 const NESTING_AA_PROFILE = `
-  #include <abstractions/lxc/start-container>
-
+  pivot_root,
   mount /var/lib/lxd/shmounts/ -> /var/lib/lxd/shmounts/,
   mount none -> /var/lib/lxd/shmounts/,
   mount fstype=proc -> /usr/lib/x86_64-linux-gnu/lxc/**,
@@ -41,6 +40,7 @@ const NESTING_AA_PROFILE = `
   # So allow all mounts until that is straightened out:
   mount,
   mount options=bind /var/lib/lxd/shmounts/** -> /var/lib/lxd/**,
+  change_profile -> lxc-container-default,
 `
 
 const DEFAULT_AA_PROFILE = `
@@ -53,6 +53,7 @@ profile lxd-%s flags=(attach_disconnected,mediate_deleted) {
 
     # nesting support goes here if needed
     %s
+    change_profile -> lxd-%s,
 }`
 
 func AAProfileName(c *containerLXD) string {
@@ -73,7 +74,7 @@ func getAAProfileContent(c *containerLXD) string {
 		nesting = NESTING_AA_PROFILE
 	}
 
-	return fmt.Sprintf(DEFAULT_AA_PROFILE, c.name, rawApparmor, nesting)
+	return fmt.Sprintf(DEFAULT_AA_PROFILE, c.name, rawApparmor, nesting, c.name)
 }
 
 func runApparmor(command string, profile string) error {
@@ -183,4 +184,13 @@ func AADeleteProfile(c *containerLXD) {
 	 */
 	os.Remove(path.Join(aaPath, "cache", AAProfileName(c)))
 	os.Remove(path.Join(aaPath, "profiles", AAProfileName(c)))
+}
+
+// What's current apparmor profile
+func aaProfile() string {
+	contents, err := ioutil.ReadFile("/proc/self/attr/current")
+	if err == nil {
+		return string(contents)
+	}
+	return ""
 }

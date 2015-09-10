@@ -474,6 +474,7 @@ func (c *containerLXD) init() error {
 	}
 
 	if c.IsNesting() {
+		shared.Debugf("Setting up %s for nesting", c.name)
 		orig := c.c.ConfigItem("lxc.mount.auto")
 		auto := ""
 		if len(orig) == 1 {
@@ -498,11 +499,18 @@ func (c *containerLXD) init() error {
 		if err != nil {
 			return err
 		}
-		/*
-		 * Until stacked apparmor profiles are possible, we have to run nested
-		 * containers unconfined
-		 */
-		err = c.c.SetConfigItem("lxc.aa_profile", "unconfined")
+	}
+
+	/*
+	 * Until stacked apparmor profiles are possible, we have to run nested
+	 * containers unconfined
+	 */
+	if curProfile := aaProfile(); curProfile != "" {
+		shared.Debugf("Running %s in current profile %s (nested container)", c.name, curProfile)
+		curProfile := strings.TrimSuffix(curProfile, " (enforce)")
+		if err := c.c.SetConfigItem("lxc.aa_profile", curProfile); err != nil {
+			return err
+		}
 	}
 
 	if err := c.c.SetConfigItem("lxc.rootfs", c.RootfsPathGet()); err != nil {
