@@ -23,14 +23,23 @@ var aaEnabled = false
 var aaPath = shared.VarPath("security", "apparmor")
 
 const NESTING_AA_PROFILE = `
+  #include <abstractions/lxc/start-container>
+
   mount /var/lib/lxd/shmounts/ -> /var/lib/lxd/shmounts/,
   mount none -> /var/lib/lxd/shmounts/,
   mount fstype=proc -> /usr/lib/x86_64-linux-gnu/lxc/**,
   mount fstype=sysfs -> /usr/lib/x86_64-linux-gnu/lxc/**,
+  mount options=(rw,bind),
   mount options=(rw,rbind),
   deny /dev/.lxd/proc/** rw,
   deny /dev/.lxd/sys/** rw,
   mount options=(rw,make-rshared),
+
+  # there doesn't seem to be a way to ask for:
+  # mount options=(ro,nosuid,nodev,noexec,remount,bind),
+  # as we always get mount to $cdir/proc/sys with those flags denied
+  # So allow all mounts until that is straightened out:
+  mount,
   mount options=bind /var/lib/lxd/shmounts/** -> /var/lib/lxd/**,
 `
 
