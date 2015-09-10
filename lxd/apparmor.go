@@ -25,7 +25,11 @@ var aaPath = shared.VarPath("security", "apparmor")
 const NESTING_AA_PROFILE = `
   mount /var/lib/lxd/shmounts/ -> /var/lib/lxd/shmounts/,
   mount none -> /var/lib/lxd/shmounts/,
-  mount options=bind,
+  mount fstype=proc -> /usr/lib/x86_64-linux-gnu/lxc/**,
+  mount fstype=sysfs -> /usr/lib/x86_64-linux-gnu/lxc/**,
+  mount options=(rw,rbind),
+  deny /dev/.lxd/proc/** rw,
+  deny /dev/.lxd/sys/** rw,
   mount options=(rw,make-rshared),
   mount options=bind /var/lib/lxd/shmounts/** -> /var/lib/lxd/**,
 `
