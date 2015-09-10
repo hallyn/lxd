@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path"
+	"strings"
 
 	"github.com/lxc/lxd/shared"
 
@@ -190,7 +191,7 @@ func AADeleteProfile(c *containerLXD) {
 func aaProfile() string {
 	contents, err := ioutil.ReadFile("/proc/self/attr/current")
 	if err == nil {
-		return string(contents)
+		return strings.TrimSpace(string(contents))
 	}
 	return ""
 }
