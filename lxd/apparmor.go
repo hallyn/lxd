@@ -78,7 +78,7 @@ func runApparmor(command string, profile string) error {
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		shared.Log.Error("Running apparmor",
-			log.Ctx{"output": string(output), "err": err})
+			log.Ctx{"action": command, "output": string(output), "err": err})
 	}
 
 	return err
