@@ -203,6 +203,11 @@ wipe() {
     kill -9 ${pid}
   done
 
+  if [ -f ${TEST_DIR}/loops ]; then
+    cat ${TEST_DIR}/loops  | while read line; do
+      losetup -d $line || true
+    done
+  fi
   if mountpoint -q "${1}"; then
     umount "${1}"
   fi
