@@ -20,18 +20,6 @@ import (
 	log "gopkg.in/inconshreveable/log15.v2"
 )
 
-func addBlockDev(dev string) ([]string, error) {
-	stat := syscall.Stat_t{}
-	err := syscall.Stat(dev, &stat)
-	if err != nil {
-		return []string{}, err
-	}
-	k := "lxc.cgroup.devices.allow"
-	v := fmt.Sprintf("b %d:%d rwm", uint(stat.Rdev/256), uint(stat.Rdev%256))
-	line := []string{k, v}
-	return line, err
-}
-
 func devGetOptions(d shared.Device) (string, error) {
 	opts := []string{"bind", "create=file"}
 	if d["uid"] != "" {
@@ -136,7 +124,7 @@ func unixDevCgroup(dev shared.Device) ([][]string, error) {
 	return [][]string{entry}, nil
 }
 
-func deviceToLxc(d shared.Device) ([][]string, error) {
+func deviceToLxc(cntPath string, d shared.Device) ([][]string, error) {
 	switch d["type"] {
 	case "unix-char":
 		return unixDevCgroup(d)
@@ -182,17 +170,13 @@ func deviceToLxc(d shared.Device) ([][]string, error) {
 		source := d["source"]
 		fstype := "none"
 		options := []string{}
-		var err error
 		if shared.IsBlockdevPath(d["source"]) {
-			fstype, err = shared.BlockFsDetect(d["source"])
-			if err != nil {
-				return nil, fmt.Errorf("Error setting up %s: %s\n", d["name"], err)
-			}
-			l, err := addBlockDev(d["source"])
+			l, err := mountTmpBlockdev(cntPath, d)
 			if err != nil {
 				return nil, fmt.Errorf("Error adding blockdev: %s\n", err)
 			}
 			configLines = append(configLines, l)
+			return configLines, nil
 		} else if shared.IsDir(source) {
 			options = append(options, "bind")
 			options = append(options, "create=dir")
@@ -565,16 +549,5 @@ func devicesApplyDeltaLive(tx *sql.Tx, c container, preDevList shared.Devices, p
 		}
 	}
 
-	return nil
-}
-
-func validateConfig(c container, devs shared.Devices) error {
-	for _, dev := range devs {
-		if dev["type"] == "disk" && shared.IsBlockdevPath(dev["source"]) {
-			if !c.IsPrivileged() {
-				return fmt.Errorf("Only privileged containers may mount block devices")
-			}
-		}
-	}
 	return nil
 }
